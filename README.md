@@ -1,4 +1,4 @@
-sqlite-utils-android
+sqliteutils-android
 ====================
 
 Utility classes for working with SQLiteDatabase in Android:
