@@ -3,7 +3,6 @@ package com.whitelightgrp.mobility.android.database;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 
-import android.content.ContentValues;
 import android.content.Context;
 import android.database.Cursor;
 import android.database.DatabaseUtils;
@@ -16,60 +15,6 @@ import android.database.sqlite.SQLiteException;
  * @author Justin Rohde, WhiteLight Group
  */
 public class SQLiteUtils {
-    /**
-     * Log tag.
-     */
-    private final static String LOG_TAG = SQLiteUtils.class.getSimpleName();
-
-    /**
-     * Insert values into a table, additionally updating the TIME_STAMP field with the current time.
-     *
-     * @param context The {@link Context} used to open the database.
-     * @param tableName The table into which to insert records.
-     * @param values A map of column-value pairs to insert.
-     * @return The row ID of the newly inserted row, or -1 if an error occurred.
-     */
-    public static long insertWithTimestampUpdate(Context context, String tableName, ContentValues values) {
-        // Update the timestamp of the record
-        values.put("TIME_STAMP", System.currentTimeMillis());
-
-        // Insert the record
-        SQLiteDatabase db = OpenHelper.getDatabase(context);
-        return db.insert(tableName, null, values);
-    }
-
-    /**
-     * Insert multiple records into a table in sequence. <p> If a single insert fails, the entire operation will be rolled back. </p>
-     *
-     * @param context The {@link android.content.Context} used to open the database.
-     * @param tableName The name of the table into which to insert records.
-     * @param values A list of maps of column-value pairs to insert.
-     * @return {@code true} if all columns were inserted successfully, {@code false} otherwise.
-     */
-    public static boolean insertMultiple(Context context, String tableName, ArrayList<ContentValues> values) {
-        SQLiteDatabase db = OpenHelper.getDatabase(context);
-        try {
-            // Begin transaction
-            db.beginTransaction();
-            for (ContentValues cv : values) {
-                if (db.insert(tableName, null, cv) == -1) {
-                    return false;
-                }
-            }
-
-            // Commit the data
-            db.setTransactionSuccessful();
-            return true;
-        }
-        catch (SQLiteException e) {
-            e.printStackTrace();
-            return false;
-        }
-        finally {
-            // End the transaction, whether the data was committed or not.
-            db.endTransaction();
-        }
-    }
 
     /**
      * Copy all records from the source table into the destination table, optionally filtering the source records. <p> If the primary keys exist for a
@@ -225,64 +170,6 @@ public class SQLiteUtils {
     }
 
     /**
-     * Perform a SQL query, placing the results into a list of maps of column-value pairs.
-     *
-     * @param context The {@link Context} used to open the database.
-     * @param tableName The table name to compile the query against.
-     * @param columns A list of which columns to return. Passing null will return all columns, which is discouraged to prevent reading data from
-     * storage that isn't going to be used.
-     * @param selection A filter declaring which rows to return, formatted as an SQL WHERE clause (excluding the WHERE itself). Passing null will
-     * return all rows for the given table.
-     * @param selectionArgs You may include ?s in selection, which will be replaced by the values from selectionArgs, in order that they appear in the
-     * selection. The values will be bound as Strings.
-     * @param groupBy A filter declaring how to group rows, formatted as an SQL GROUP BY clause (excluding the GROUP BY itself). Passing null will
-     * cause the rows to not be grouped.
-     * @param having A filter declare which row groups to include in the cursor, if row grouping is being used, formatted as an SQL HAVING clause
-     * (excluding the HAVING itself). Passing null will cause all row groups to be included, and is required when row grouping is not being used.
-     * @param orderBy How to order the rows, formatted as an SQL ORDER BY clause (excluding the ORDER BY itself). Passing null will use the default
-     * sort order, which may be unordered.
-     * @param limit Limits the number of rows returned by the query, formatted as LIMIT clause. Passing null denotes no LIMIT clause.
-     * @return A map of column-value pairs containing the results, or null of an error occurred.
-     */
-    public static ArrayList<ContentValues> queryAsContentValues(
-            Context context,
-            String tableName,
-            String[] columns,
-            String selection,
-            String[] selectionArgs,
-            String groupBy,
-            String having,
-            String orderBy,
-            String limit
-    ) {
-        Cursor cursor = null;
-        try {
-            // Perform the query
-            SQLiteDatabase db = OpenHelper.getDatabase(context);
-            cursor = db.query(tableName, columns, selection, selectionArgs, groupBy, having, orderBy, limit);
-
-            ArrayList<ContentValues> values = new ArrayList<ContentValues>();
-            while (cursor.moveToNext()) {
-                // Convert row to ContentValues and add to list
-                ContentValues rowValues = new ContentValues();
-                android.database.DatabaseUtils.cursorRowToContentValues(cursor, rowValues);
-                values.add(rowValues);
-            }
-            return values;
-        }
-        catch (SQLiteException e) {
-            e.printStackTrace();
-            return null;
-        }
-        finally {
-            // Clean up
-            if (cursor != null) {
-                cursor.close();
-            }
-        }
-    }
-
-    /**
      * Convenience method to query for a single array of {@code byte}.
      *
      * @param context The {@link Context} used to open the database.
@@ -299,31 +186,19 @@ public class SQLiteUtils {
     }
 
     /**
-     * Return the count of all records in a table.
-     *
-     * @param context The {@link Context} used to open the database.
-     * @param tableName The name of the table to query.
-     * @return The number of records in the table.
-     */
-    public static int queryForCount(Context context, String tableName) {
-        return queryForCount(context, tableName, null, null);
-    }
-
-    /**
      * Return the count of all records in a table matching a selection.
      *
-     * @param context The {@link Context} used to open the database.
+     * @param db The database containing the table to query.
      * @param tableName The table name to compile the query against.
      * @param selection A filter declaring which rows to return, formatted as an SQL WHERE clause (excluding the WHERE itself). Passing null will
      * return all rows for the given table.
      * @param selectionArgs You may include ?s in selection, which will be replaced by the values from selectionArgs, in order that they appear in the
      * selection. The values will be bound as Strings.
-     * @return The number of records in the selection, or 0 if an error occurred.
+     * @return The number of records in the selection, or 0 if the table does not exist.
      */
-    public static int queryForCount(Context context, String tableName, String selection, String[] selectionArgs) {
-        SQLiteDatabase db = OpenHelper.getDatabase(context);
+    public static long safeQueryNumEntries(SQLiteDatabase db, String tableName, String selection, String[] selectionArgs) {
         try {
-            return (int) DatabaseUtils.queryNumEntries(db, tableName, selection, selectionArgs);
+            return DatabaseUtils.queryNumEntries(db, tableName, selection, selectionArgs);
         }
         catch (SQLiteException e) {
             e.printStackTrace();
@@ -788,7 +663,7 @@ public class SQLiteUtils {
             sql = sql.replaceFirst(tableName, exportTableName);
             sql = "CREATE TABLE Export.MyTable(Id INTEGER PRIMARY KEY)";
             db.execSQL(sql);
-            Cursor cursor = db.query("sqlite_master", new String[] { "name"}, "type='table'", null, null, null, null, "1");
+            Cursor cursor = db.query("sqlite_master", new String[] { "name" }, "type='table'", null, null, null, null, "1");
             DatabaseUtils.dumpCursor(cursor);
             cursor.close();
         }
@@ -881,8 +756,8 @@ public class SQLiteUtils {
      * @return The list of database table names, or {@code null} if the file does not exist.
      */
     public static ArrayList<String> listTables(SQLiteDatabase db) {
-        String query = "type='table' AND name NOT IN('sqlite_master', 'android_metadata')";
-        Cursor cursor = db.query("name", null, query, null, null, null, null);
+        String query = "type='table' AND name <> 'android_metadata')";
+        Cursor cursor = db.query("sqlite_master", null, query, null, null, null, null);
         ArrayList<String> tableList = new ArrayList<String>();
         while (cursor.moveToNext()) {
             tableList.add(cursor.getString(cursor.getColumnIndex("name")));
