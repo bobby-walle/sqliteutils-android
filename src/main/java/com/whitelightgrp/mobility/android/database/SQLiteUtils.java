@@ -1,7 +1,7 @@
 package com.whitelightgrp.mobility.android.database;
 
-import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.Locale;
 
 import android.content.Context;
 import android.database.Cursor;
@@ -15,7 +15,6 @@ import android.database.sqlite.SQLiteException;
  * @author Justin Rohde, WhiteLight Group
  */
 public class SQLiteUtils {
-
     /**
      * Copy all records from the source table into the destination table, optionally filtering the source records. <p> If the primary keys exist for a
      * record, the existing record is replaced. </p>
@@ -48,6 +47,7 @@ public class SQLiteUtils {
             }
             sb.append(cursor.getColumnName(i));
         }
+        cursor.close();
 
         long count;
         try {
@@ -102,29 +102,27 @@ public class SQLiteUtils {
     }
 
     /**
-     * Perform a SQL query to obtain a result set.
+     * Convenience method to retrieve a single byte array.
      *
-     * @param context The {@link Context} used to open the database.
+     * @param db The database to query.
      * @param tableName The table name to compile the query against.
-     * @param columns A list of which columns to return. Passing null will return all columns, which is discouraged to prevent reading data from
-     * storage that isn't going to be used.
+     * @param column The column to return.
      * @param selection A filter declaring which rows to return, formatted as an SQL WHERE clause (excluding the WHERE itself). Passing null will
      * return all rows for the given table.
      * @param selectionArgs You may include ?s in selection, which will be replaced by the values from selectionArgs, in order that they appear in the
      * selection. The values will be bound as Strings.
-     * @return The {@link StaticResultSet} containing the result values. If an error occurred, the {@link StaticResultSet#rowCount} will be {@code 0}.
+     * @return The single {@code byte[]} result. Set to {@code null} if an error occurred.
      */
-    public static StaticResultSet query(Context context, String tableName, String[] columns, String selection, String[] selectionArgs) {
-        return query(context, tableName, columns, selection, selectionArgs, null, null, null, null);
+    public static byte[] safeQueryForByteArray(SQLiteDatabase db, String tableName, String column, String selection, String[] selectionArgs) {
+        return safeQueryForByteArray(db, tableName, column, selection, selectionArgs, null, null, null);
     }
 
     /**
-     * Perform a SQL query to obtain a result set.
+     * Convenience method to retrieve a single byte array.
      *
-     * @param context The {@link Context} used to open the database.
+     * @param db The database to query.
      * @param tableName The table name to compile the query against.
-     * @param columns A list of which columns to return. Passing null will return all columns, which is discouraged to prevent reading data from
-     * storage that isn't going to be used.
+     * @param column The column to return.
      * @param selection A filter declaring which rows to return, formatted as an SQL WHERE clause (excluding the WHERE itself). Passing null will
      * return all rows for the given table.
      * @param selectionArgs You may include ?s in selection, which will be replaced by the values from selectionArgs, in order that they appear in the
@@ -135,54 +133,31 @@ public class SQLiteUtils {
      * (excluding the HAVING itself). Passing null will cause all row groups to be included, and is required when row grouping is not being used.
      * @param orderBy How to order the rows, formatted as an SQL ORDER BY clause (excluding the ORDER BY itself). Passing null will use the default
      * sort order, which may be unordered.
-     * @param limit Limits the number of rows returned by the query, formatted as LIMIT clause. Passing null denotes no LIMIT clause.
-     * @return The {@link StaticResultSet} containing the result values, or an empty {@link StaticResultSet} if an error occurred.
+     * @return The single {@code byte[]} result. Set to {@code null} if an error occurred.
      */
-    public static StaticResultSet query(
-            Context context,
+    public static byte[] safeQueryForByteArray(
+            SQLiteDatabase db,
             String tableName,
-            String[] columns,
+            String column,
             String selection,
             String[] selectionArgs,
             String groupBy,
             String having,
-            String orderBy,
-            String limit
+            String orderBy
     ) {
-        Cursor cursor = null;
+        Cursor cursor = db.query(tableName, new String[] { column }, selection, selectionArgs, groupBy, having, orderBy, "1");
         try {
-            SQLiteDatabase db = OpenHelper.getDatabase(context);
-            cursor = db.query(tableName, columns, selection, selectionArgs, groupBy, having, orderBy, limit);
-
-            // Create the result set
-            return new StaticResultSet(cursor);
+            return cursor.moveToFirst() ? cursor.getBlob(0) : null;
         }
         catch (SQLiteException e) {
-            // Return an empty result set
-            return new StaticResultSet(null);
+            e.printStackTrace();
+            return null;
         }
         finally {
-            // Clean up
             if (cursor != null) {
                 cursor.close();
             }
         }
-    }
-
-    /**
-     * Convenience method to query for a single array of {@code byte}.
-     *
-     * @param context The {@link Context} used to open the database.
-     * @param tableName The table name to compile the query against.
-     * @param column The column to return.
-     * @param selection A filter declaring which rows to return, formatted as an SQL WHERE clause (excluding the WHERE itself). Passing null will
-     * return all rows for the given table.
-     * @param selectionArgs You may include ?s in selection, which will be replaced by the values from selectionArgs, in order that they appear in the
-     * selection. The values will be bound as Strings.
-     * @return The single {@code byte[]} result. Set to {@code null} if an error occurred.
-     */
-    public static byte[] queryForByteArray(Context context, String tableName, String column, String selection, String[] selectionArgs) {
-        return (byte[]) queryForSingleValue(context, tableName, column, selection, selectionArgs, null, null, null, DataType.BLOB);
     }
 
     /**
@@ -196,7 +171,7 @@ public class SQLiteUtils {
      * selection. The values will be bound as Strings.
      * @return The number of records in the selection, or 0 if the table does not exist.
      */
-    public static long safeQueryNumEntries(SQLiteDatabase db, String tableName, String selection, String[] selectionArgs) {
+    public static long safeQueryForCount(SQLiteDatabase db, String tableName, String selection, String[] selectionArgs) {
         try {
             return DatabaseUtils.queryNumEntries(db, tableName, selection, selectionArgs);
         }
@@ -209,7 +184,7 @@ public class SQLiteUtils {
     /**
      * Convenience method to return a single {@link Long}.
      *
-     * @param context The {@link Context} used to open the database.
+     * @param db The database to query.
      * @param tableName The table name to compile the query against.
      * @param column The column to return.
      * @param selection A filter declaring which rows to return, formatted as an SQL WHERE clause (excluding the WHERE itself). Passing null will
@@ -218,14 +193,57 @@ public class SQLiteUtils {
      * selection. The values will be bound as Strings.
      * @return The single {@link Long} result. Set to {@code null} if an error occurred.
      */
-    public static Long queryForLong(Context context, String tableName, String column, String selection, String[] selectionArgs) {
-        return (Long) queryForSingleValue(context, tableName, column, selection, selectionArgs, null, null, null, DataType.LONG);
+    public static Long safeQueryForLong(SQLiteDatabase db, String tableName, String column, String selection, String[] selectionArgs) {
+        return safeQueryForLong(db, tableName, column, selection, selectionArgs, null, null, null);
     }
 
     /**
-     * Convenience method to return a single {@code long}, or a default value if no result is found.
+     * Convenience method to return a single {@link Long}.
      *
-     * @param context The {@link Context} used to open the database.
+     * @param db The database to query.
+     * @param tableName The table name to compile the query against.
+     * @param column The column to return.
+     * @param selection A filter declaring which rows to return, formatted as an SQL WHERE clause (excluding the WHERE itself). Passing null will
+     * return all rows for the given table.
+     * @param selectionArgs You may include ?s in selection, which will be replaced by the values from selectionArgs, in order that they appear in the
+     * selection. The values will be bound as Strings.
+     * @param groupBy A filter declaring how to group rows, formatted as an SQL GROUP BY clause (excluding the GROUP BY itself). Passing null will
+     * cause the rows to not be grouped.
+     * @param having A filter declare which row groups to include in the cursor, if row grouping is being used, formatted as an SQL HAVING clause
+     * (excluding the HAVING itself). Passing null will cause all row groups to be included, and is required when row grouping is not being used.
+     * @param orderBy How to order the rows, formatted as an SQL ORDER BY clause (excluding the ORDER BY itself). Passing null will use the default
+     * sort order, which may be unordered.
+     * @return The single {@link Long} result. Set to {@code null} if an error occurred.
+     */
+    public static Long safeQueryForLong(
+            SQLiteDatabase db,
+            String tableName,
+            String column,
+            String selection,
+            String[] selectionArgs,
+            String groupBy,
+            String having,
+            String orderBy
+    ) {
+        Cursor cursor = db.query(tableName, new String[] { column }, selection, selectionArgs, groupBy, having, orderBy, "1");
+        try {
+            return cursor.moveToFirst() ? cursor.getLong(0) : null;
+        }
+        catch (SQLiteException e) {
+            e.printStackTrace();
+            return null;
+        }
+        finally {
+            if (cursor != null) {
+                cursor.close();
+            }
+        }
+    }
+
+    /**
+     * Convenience method to retrieve a single long value, or a default if the query returns no rows.
+     *
+     * @param db The database to query.
      * @param tableName The table name to compile the query against.
      * @param column The column to return.
      * @param selection A filter declaring which rows to return, formatted as an SQL WHERE clause (excluding the WHERE itself). Passing null will
@@ -235,22 +253,82 @@ public class SQLiteUtils {
      * @param defaultValue The value to return if there query result is {@code null}.
      * @return The single {@link Long} result. Set to {@code null} if an error occurred.
      */
-    public static long queryForLongWithDefault(
-            Context context,
+    public static long queryForLong(
+            SQLiteDatabase db,
             String tableName,
             String column,
             String selection,
             String[] selectionArgs,
             long defaultValue
     ) {
-        Long result = (Long) queryForSingleValue(context, tableName, column, selection, selectionArgs, null, null, null, DataType.LONG);
-        return result == null ? defaultValue : result;
+        return queryForLong(db, tableName, column, selection, selectionArgs, null, null, null, defaultValue);
     }
 
     /**
-     * Convenience method to return a single {@link Long}.
+     * Convenience method to retrieve a single long value, or a default if the query returns no rows.
      *
-     * @param context The {@link Context} used to open the database.
+     * @param db The database to query.
+     * @param tableName The table name to compile the query against.
+     * @param column The column to return.
+     * @param selection A filter declaring which rows to return, formatted as an SQL WHERE clause (excluding the WHERE itself). Passing null will
+     * return all rows for the given table.
+     * @param selectionArgs You may include ?s in selection, which will be replaced by the values from selectionArgs, in order that they appear in the
+     * selection. The values will be bound as Strings.
+     * @param groupBy A filter declaring how to group rows, formatted as an SQL GROUP BY clause (excluding the GROUP BY itself). Passing null will
+     * cause the rows to not be grouped.
+     * @param having A filter declare which row groups to include in the cursor, if row grouping is being used, formatted as an SQL HAVING clause
+     * (excluding the HAVING itself). Passing null will cause all row groups to be included, and is required when row grouping is not being used.
+     * @param orderBy How to order the rows, formatted as an SQL ORDER BY clause (excluding the ORDER BY itself). Passing null will use the default
+     * sort order, which may be unordered.
+     * @param defaultValue The value to return if there query result is {@code null}.
+     * @return The single {@link Long} result. Set to {@code null} if an error occurred.
+     */
+    public static long queryForLong(
+            SQLiteDatabase db,
+            String tableName,
+            String column,
+            String selection,
+            String[] selectionArgs,
+            String groupBy,
+            String having,
+            String orderBy,
+            long defaultValue
+    ) {
+        Cursor cursor = db.query(tableName, new String[] { column }, selection, selectionArgs, groupBy, having, orderBy, "1");
+        try {
+            return cursor.moveToFirst() ? cursor.getLong(0) : defaultValue;
+        }
+        catch (SQLiteException e) {
+            e.printStackTrace();
+            return defaultValue;
+        }
+        finally {
+            if (cursor != null) {
+                cursor.close();
+            }
+        }
+    }
+
+    /**
+     * Convenience method to return a single {@link Integer}.
+     *
+     * @param db The database to query.
+     * @param tableName The table name to compile the query against.
+     * @param column The column to return.
+     * @param selection A filter declaring which rows to return, formatted as an SQL WHERE clause (excluding the WHERE itself). Passing null will
+     * return all rows for the given table.
+     * @param selectionArgs You may include ?s in selection, which will be replaced by the values from selectionArgs, in order that they appear in the
+     * selection. The values will be bound as Strings.
+     * @return The single {@link Integer} result. Set to {@code null} if an error occurred.
+     */
+    public static Integer safeQueryForInt(SQLiteDatabase db, String tableName, String column, String selection, String[] selectionArgs) {
+        return safeQueryForInt(db, tableName, column, selection, selectionArgs, null, null, null);
+    }
+
+    /**
+     * Convenience method to return a single {@link Integer}.
+     *
+     * @param db The database to query.
      * @param tableName The table name to compile the query against.
      * @param column The column to return.
      * @param selection A filter declaring which rows to return, formatted as an SQL WHERE clause (excluding the WHERE itself). Passing null will
@@ -265,8 +343,8 @@ public class SQLiteUtils {
      * sort order, which may be unordered.
      * @return The single {@link Long} result. Set to {@code null} if an error occurred.
      */
-    public static Long queryForLong(
-            Context context,
+    public static Integer safeQueryForInt(
+            SQLiteDatabase db,
             String tableName,
             String column,
             String selection,
@@ -275,170 +353,84 @@ public class SQLiteUtils {
             String having,
             String orderBy
     ) {
-        return (Long) queryForSingleValue(context, tableName, column, selection, selectionArgs, groupBy, having, orderBy, DataType.LONG);
-    }
-
-    /**
-     * Convenience method to return a single {@link java.math.BigDecimal}, or a default value is no result is found.
-     *
-     * @param context The {@link Context} used to open the database.
-     * @param tableName The table name to compile the query against.
-     * @param column The column to return.
-     * @param selection A filter declaring which rows to return, formatted as an SQL WHERE clause (excluding the WHERE itself). Passing null will
-     * return all rows for the given table.
-     * @param selectionArgs You may include ?s in selection, which will be replaced by the values from selectionArgs, in order that they appear in the
-     * selection. The values will be bound as Strings.
-     * @param defaultValue The value to return if the query result is {@code null}.
-     * @return The single {@link java.math.BigDecimal} result. Set to {@code null} if an error occurred.
-     */
-    public static BigDecimal queryForBigDecimalWithDefault(
-            Context context,
-            String tableName,
-            String column,
-            String selection,
-            String[] selectionArgs,
-            BigDecimal defaultValue
-    ) {
-        String value = queryForString(context, tableName, column, selection, selectionArgs, null, null, null);
-        return value == null ? defaultValue : new BigDecimal(value);
-    }
-
-    /**
-     * Convenience method to return a single {@link java.math.BigDecimal}, or a default value if no result is found.
-     *
-     * @param context The {@link Context} used to open the database.
-     * @param tableName The table name to compile the query against.
-     * @param column The column to return.
-     * @param selection A filter declaring which rows to return, formatted as an SQL WHERE clause (excluding the WHERE itself). Passing null will
-     * return all rows for the given table.
-     * @param selectionArgs You may include ?s in selection, which will be replaced by the values from selectionArgs, in order that they appear in the
-     * selection. The values will be bound as Strings.
-     * @param groupBy A filter declaring how to group rows, formatted as an SQL GROUP BY clause (excluding the GROUP BY itself). Passing null will
-     * cause the rows to not be grouped.
-     * @param having A filter declare which row groups to include in the cursor, if row grouping is being used, formatted as an SQL HAVING clause
-     * (excluding the HAVING itself). Passing null will cause all row groups to be included, and is required when row grouping is not being used.
-     * @param orderBy How to order the rows, formatted as an SQL ORDER BY clause (excluding the ORDER BY itself). Passing null will use the default
-     * sort order, which may be unordered.
-     * @param defaultValue The value to return if the query result is {@code null}.
-     * @return The single {@link BigDecimal} result. Set to {@code null} if an error occurred.
-     */
-    public static BigDecimal queryForBigDecimalWithDefault(
-            Context context,
-            String tableName,
-            String column,
-            String selection,
-            String[] selectionArgs,
-            String groupBy,
-            String having,
-            String orderBy,
-            BigDecimal defaultValue
-    ) {
-        String value = queryForString(context, tableName, column, selection, selectionArgs, groupBy, having, orderBy);
-        return value == null ? defaultValue : new BigDecimal(value);
-    }
-
-    /**
-     * Convenience method to return a single {@link Integer}.
-     *
-     * @param context The {@link Context} used to open the database.
-     * @param tableName The table name to compile the query against.
-     * @param column The column to return.
-     * @param selection A filter declaring which rows to return, formatted as an SQL WHERE clause (excluding the WHERE itself). Passing null will
-     * return all rows for the given table.
-     * @param selectionArgs You may include ?s in selection, which will be replaced by the values from selectionArgs, in order that they appear in the
-     * selection. The values will be bound as Strings.
-     * @return The single {@link Integer} result. Set to {@code null} if an error occurred.
-     */
-    public static Integer queryForInt(Context context, String tableName, String column, String selection, String[] selectionArgs) {
-        return (Integer) queryForSingleValue(context, tableName, column, selection, selectionArgs, null, null, null, DataType.INTEGER);
-    }
-
-    /**
-     * Convenience method to return a single {@code int}, or a default value if no result is found.
-     *
-     * @param context The {@link Context} used to open the database.
-     * @param tableName The table name to compile the query against.
-     * @param column The column to return.
-     * @param selection A filter declaring which rows to return, formatted as an SQL WHERE clause (excluding the WHERE itself). Passing null will
-     * return all rows for the given table.
-     * @param selectionArgs You may include ?s in selection, which will be replaced by the values from selectionArgs, in order that they appear in the
-     * selection. The values will be bound as Strings.
-     * @param defaultValue The value to return if the query result is {@code null}.
-     * @return The single {@link Integer} result. Set to {@code null} if an error occurred.
-     */
-    public static int queryForIntWithDefault(
-            Context context,
-            String tableName,
-            String column,
-            String selection,
-            String[] selectionArgs,
-            int defaultValue
-    ) {
-        Integer result = (Integer) queryForSingleValue(context, tableName, column, selection, selectionArgs, null, null, null, DataType.INTEGER);
-        return result == null ? defaultValue : result;
-    }
-
-    /**
-     * Perform a query to return a single {@link Object}.
-     *
-     * @param context The {@link Context} used to open the database.
-     * @param tableName The table name to compile the query against.
-     * @param column The column to return.
-     * @param selection A filter declaring which rows to return, formatted as an SQL WHERE clause (excluding the WHERE itself). Passing null will
-     * return all rows for the given table.
-     * @param selectionArgs You may include ?s in selection, which will be replaced by the values from selectionArgs, in order that they appear in the
-     * selection. The values will be bound as Strings.
-     * @param groupBy A filter declaring how to group rows, formatted as an SQL GROUP BY clause (excluding the GROUP BY itself). Passing null will
-     * cause the rows to not be grouped.
-     * @param having A filter declare which row groups to include in the cursor, if row grouping is being used, formatted as an SQL HAVING clause
-     * (excluding the HAVING itself). Passing null will cause all row groups to be included, and is required when row grouping is not being used.
-     * @param orderBy How to order the rows, formatted as an SQL ORDER BY clause (excluding the ORDER BY itself). Passing null will use the default
-     * sort order, which may be unordered.
-     * @param type The type of result to get from the cursor.
-     * @return The single {@link Object} result. Set to {@code null} if an error occurred.
-     */
-    private static Object queryForSingleValue(
-            Context context,
-            String tableName,
-            String column,
-            String selection,
-            String[] selectionArgs,
-            String groupBy,
-            String having,
-            String orderBy,
-            DataType type
-    ) {
-        Cursor cursor = null;
+        Cursor cursor = db.query(tableName, new String[] { column }, selection, selectionArgs, groupBy, having, orderBy, "1");
         try {
-            // Perform the query
-            SQLiteDatabase db = OpenHelper.getDatabase(context);
-            cursor = db.query(tableName, new String[] { column }, selection, selectionArgs, groupBy, having, orderBy, "1");
-
-            if (cursor.moveToFirst()) {
-                // Return the result as the specified type
-                switch (type) {
-                    case STRING:
-                        return cursor.getString(0);
-                    case INTEGER:
-                        return cursor.getInt(0);
-                    case LONG:
-                        return cursor.getLong(0);
-                    case BLOB:
-                        return cursor.getBlob(0);
-                    default:
-                        return cursor.getString(0);
-                }
-            }
-            else {
-                return null;
-            }
+            return cursor.moveToFirst() ? cursor.getInt(0) : null;
         }
         catch (SQLiteException e) {
             e.printStackTrace();
             return null;
         }
         finally {
-            // Clean up
+            if (cursor != null) {
+                cursor.close();
+            }
+        }
+    }
+
+    /**
+     * Convenience method to return a single {@code int}, or a default value if no result is found.
+     *
+     * @param db The database to query.
+     * @param tableName The table name to compile the query against.
+     * @param column The column to return.
+     * @param selection A filter declaring which rows to return, formatted as an SQL WHERE clause (excluding the WHERE itself). Passing null will
+     * return all rows for the given table.
+     * @param selectionArgs You may include ?s in selection, which will be replaced by the values from selectionArgs, in order that they appear in the
+     * selection. The values will be bound as Strings.
+     * @param defaultValue The value to return if the query result is {@code null}.
+     * @return The single {@link Integer} result. Set to {@code null} if an error occurred.
+     */
+    public static int queryForInt(
+            SQLiteDatabase db,
+            String tableName,
+            String column,
+            String selection,
+            String[] selectionArgs,
+            int defaultValue
+    ) {
+        return queryForInt(db, tableName, column, selection, selectionArgs, null, null, null, defaultValue);
+    }
+
+    /**
+     * Convenience method to return a single {@code int}, or a default value if no result is found.
+     *
+     * @param db The database to query.
+     * @param tableName The table name to compile the query against.
+     * @param column The column to return.
+     * @param selection A filter declaring which rows to return, formatted as an SQL WHERE clause (excluding the WHERE itself). Passing null will
+     * return all rows for the given table.
+     * @param selectionArgs You may include ?s in selection, which will be replaced by the values from selectionArgs, in order that they appear in the
+     * selection. The values will be bound as Strings.
+     * @param groupBy A filter declaring how to group rows, formatted as an SQL GROUP BY clause (excluding the GROUP BY itself). Passing null will
+     * cause the rows to not be grouped.
+     * @param having A filter declare which row groups to include in the cursor, if row grouping is being used, formatted as an SQL HAVING clause
+     * (excluding the HAVING itself). Passing null will cause all row groups to be included, and is required when row grouping is not being used.
+     * @param orderBy How to order the rows, formatted as an SQL ORDER BY clause (excluding the ORDER BY itself). Passing null will use the default
+     * sort order, which may be unordered.
+     * @param defaultValue The value to return if the query result is {@code null}.
+     * @return The single {@link Integer} result. Set to {@code null} if an error occurred.
+     */
+    public static int queryForInt(
+            SQLiteDatabase db,
+            String tableName,
+            String column,
+            String selection,
+            String[] selectionArgs,
+            String groupBy,
+            String having,
+            String orderBy,
+            int defaultValue
+    ) {
+        Cursor cursor = db.query(tableName, new String[] { column }, selection, selectionArgs, groupBy, having, orderBy, "1");
+        try {
+            return cursor.moveToFirst() ? cursor.getInt(0) : defaultValue;
+        }
+        catch (SQLiteException e) {
+            e.printStackTrace();
+            return defaultValue;
+        }
+        finally {
             if (cursor != null) {
                 cursor.close();
             }
@@ -448,7 +440,7 @@ public class SQLiteUtils {
     /**
      * Returns a single {@code String} from a query.
      *
-     * @param context The {@link Context} used to open the database.
+     * @param db The database to query.
      * @param tableName The table name to compile the query against.
      * @param column The column to return.
      * @param selection A filter declaring which rows to return, formatted as an SQL WHERE clause (excluding the WHERE itself). Passing null will
@@ -457,14 +449,14 @@ public class SQLiteUtils {
      * selection. The values will be bound as Strings.
      * @return The String representation of the result. Set to {@code null} if an error occurred.
      */
-    public static String queryForString(Context context, String tableName, String column, String selection, String[] selectionArgs) {
-        return queryForString(context, tableName, column, selection, selectionArgs, null, null, null);
+    public static String safeQueryForString(SQLiteDatabase db, String tableName, String column, String selection, String[] selectionArgs) {
+        return safeQueryForString(db, tableName, column, selection, selectionArgs, null, null, null);
     }
 
     /**
      * Returns a single {@code String}.
      *
-     * @param context The {@link Context} used to open the database.
+     * @param db The database to query.
      * @param tableName The table name to compile the query against.
      * @param column The column to return.
      * @param selection A filter declaring which rows to return, formatted as an SQL WHERE clause (excluding the WHERE itself). Passing null will
@@ -479,8 +471,8 @@ public class SQLiteUtils {
      * sort order, which may be unordered.
      * @return The String representation of the result. Set to {@code null} if an error occurred.
      */
-    public static String queryForString(
-            Context context,
+    public static String safeQueryForString(
+            SQLiteDatabase db,
             String tableName,
             String column,
             String selection,
@@ -489,7 +481,19 @@ public class SQLiteUtils {
             String having,
             String orderBy
     ) {
-        return (String) queryForSingleValue(context, tableName, column, selection, selectionArgs, groupBy, having, orderBy, DataType.STRING);
+        Cursor cursor = db.query(tableName, new String[] { column }, selection, selectionArgs, groupBy, having, orderBy, "1");
+        try {
+            return cursor.moveToFirst() ? cursor.getString(0) : null;
+        }
+        catch (SQLiteException e) {
+            e.printStackTrace();
+            return null;
+        }
+        finally {
+            if (cursor != null) {
+                cursor.close();
+            }
+        }
     }
 
     /**
@@ -535,97 +539,6 @@ public class SQLiteUtils {
     }
 
     /**
-     * Convenience method to perform a raw query with no selection arguments to bind.
-     *
-     * @param context The {@link Context} used to open the database.
-     * @param sql The SQL query to execute.
-     * @return A {@link StaticResultSet} containing the query results.
-     */
-    public static StaticResultSet rawQuery(Context context, String sql) {
-        return rawQuery(context, sql, null);
-    }
-
-    /**
-     * Convenience method to perform a raw query with no selection arguments to bind.
-     *
-     * @param context The {@link Context} used to open the database.
-     * @param sql The SQL query to execute.
-     * @param selectionArgs An optional array of parameters to bind to the query.
-     * @return A {@link StaticResultSet} containing the query results.
-     */
-    public static StaticResultSet rawQuery(Context context, String sql, String[] selectionArgs) {
-        SQLiteDatabase db = OpenHelper.getDatabase(context);
-        Cursor cursor = null;
-        try {
-            cursor = db.rawQuery(sql, selectionArgs);
-            return new StaticResultSet(cursor);
-        }
-        catch (SQLiteException ex) {
-            ex.printStackTrace();
-
-            // Return an empty result set
-            return new StaticResultSet(null);
-        }
-        finally {
-            // Clean up
-            if (cursor != null) {
-                cursor.close();
-            }
-        }
-    }
-
-    /**
-     * Return a single result from a query.
-     *
-     * @param context The {@link Context} used to open the database.
-     * @param sql The SQL query to execute.
-     * @param selectionArgs An optional array of selection arguments.
-     * @param type The value type to return.
-     * @return The value of the result. Set to {@code null} if no result found or an error occurred.
-     */
-    private static Object rawQueryForSingleValue(Context context, String sql, String[] selectionArgs, DataType type) {
-        // Fetch only the first row
-        if (sql != null && !sql.endsWith(" LIMIT 1")) {
-            sql += " LIMIT 1";
-        }
-
-        SQLiteDatabase db = OpenHelper.getDatabase(context);
-        Cursor cursor = null;
-        try {
-            // Perform the query
-            cursor = db.rawQuery(sql, selectionArgs);
-            if (cursor.moveToFirst()) {
-                // Return result based on type specified
-                switch (type) {
-                    case STRING:
-                        return cursor.getString(0);
-                    case INTEGER:
-                        return cursor.getInt(0);
-                    case LONG:
-                        return cursor.getLong(0);
-                    case BLOB:
-                        return cursor.getBlob(0);
-                    default:
-                        return cursor.getString(0);
-                }
-            }
-            else {
-                return null;
-            }
-        }
-        catch (SQLiteException e) {
-            e.printStackTrace();
-            return null;
-        }
-        finally {
-            // Clean up
-            if (cursor != null) {
-                cursor.close();
-            }
-        }
-    }
-
-    /**
      * Export a table to the specified database. If the database does not exist, it will be created.
      *
      * @param context The {@link Context} used to open the database.
@@ -661,7 +574,6 @@ public class SQLiteUtils {
         try {
             String sql = DatabaseUtils.stringForQuery(db, "SELECT sql FROM sqlite_master WHERE type='table' AND name='" + tableName + "'", null);
             sql = sql.replaceFirst(tableName, exportTableName);
-            sql = "CREATE TABLE Export.MyTable(Id INTEGER PRIMARY KEY)";
             db.execSQL(sql);
             Cursor cursor = db.query("sqlite_master", new String[] { "name" }, "type='table'", null, null, null, null, "1");
             DatabaseUtils.dumpCursor(cursor);
@@ -756,7 +668,7 @@ public class SQLiteUtils {
      * @return The list of database table names, or {@code null} if the file does not exist.
      */
     public static ArrayList<String> listTables(SQLiteDatabase db) {
-        String query = "type='table' AND name <> 'android_metadata')";
+        String query = "type='table' AND name <> 'android_metadata'";
         Cursor cursor = db.query("sqlite_master", null, query, null, null, null, null);
         ArrayList<String> tableList = new ArrayList<String>();
         while (cursor.moveToNext()) {
@@ -767,59 +679,216 @@ public class SQLiteUtils {
     }
 
     /**
-     * Returns a query with bind arguments filled in as literal text.
+     * Retrieve a Long from a cursor, or null if a long could not be retrieved.
      *
-     * @param sql The raw SQL text.
-     * @param bindArgs The bind arguments, which will replace ?s in the raw SQL text.
-     * @return The text with arguments filled as literal text.
+     * @param cursor The cursor from which to retrieve the value. Must be at a valid position.
+     * @param columnIndex The index of the column from which to retrieve the value.
+     * @return The Long value, or null.
      */
-    private static String formatSql(String sql, Object[] bindArgs) {
-        if (sql == null) {
+    public static Long safeGetLongFromCursor(Cursor cursor, int columnIndex) {
+        try {
+            return cursor.getLong(columnIndex);
+        }
+        catch (Exception e) {
+            e.printStackTrace();
             return null;
         }
+    }
 
-        if (bindArgs != null) {
-            for (Object bindArg : bindArgs) {
-                sql = sql.replaceFirst("\\?", "[" + String.valueOf(bindArg) + "]");
+    /**
+     * Retrieve a Long from a cursor, or null if a long could not be retrieved.
+     *
+     * @param cursor The cursor from which to retrieve the value. Must be at a valid position.
+     * @param columnName The name of the column from which to retrieve the value.
+     * @return The Long value, or null.
+     */
+    public static Long safeGetLongFromCursor(Cursor cursor, String columnName) {
+        return safeGetLongFromCursor(cursor, cursor.getColumnIndex(columnName));
+    }
+
+    /**
+     * Retrieve a long from a cursor, or a default value.
+     *
+     * @param cursor The cursor from which to retrieve the value. Must be at a valid position.
+     * @param columnIndex The index of the column from which to retrieve the value.
+     * @param defaultValue The value to return if none was retrieved.
+     * @return The long value, or the default.
+     */
+    public static long safeGetLongFromCursor(Cursor cursor, int columnIndex, long defaultValue) {
+        try {
+            return cursor.getLong(columnIndex);
+        }
+        catch (Exception e) {
+            e.printStackTrace();
+            return defaultValue;
+        }
+    }
+
+    /**
+     * Retrieve a long from a cursor, or a default value if a long could not be retrieved.
+     *
+     * @param cursor The cursor from which to retrieve the value. Must be at a valid position.
+     * @param columnName The name of the column from which to retrieve the value.
+     * @param defaultValue The value to return if none was retrieved.
+     * @return The long value, or the default.
+     */
+    public static long safeGetLongFromCursor(Cursor cursor, String columnName, long defaultValue) {
+        return safeGetLongFromCursor(cursor, cursor.getColumnIndex(columnName), defaultValue);
+    }
+
+    /**
+     * Retrieve an Integer from a cursor, or null if an int could not be retrieved.
+     *
+     * @param cursor The cursor from which to retrieve the value. Must be at a valid position.
+     * @param columnIndex The index of the column from which to retrieve the value.
+     * @return The Integer value, or null.
+     */
+    public static Integer safeGetIntFromCursor(Cursor cursor, int columnIndex) {
+        try {
+            return cursor.getInt(columnIndex);
+        }
+        catch (Exception e) {
+            e.printStackTrace();
+            return null;
+        }
+    }
+
+    /**
+     * Retrieve an Integer from a cursor, or null if an int could not be retrieved.
+     *
+     * @param cursor The cursor from which to retrieve the value. Must be at a valid position.
+     * @param columnName The name of the column from which to retrieve the value.
+     * @return The Integer value, or null.
+     */
+    public static Integer safeGetIntFromCursor(Cursor cursor, String columnName) {
+        return safeGetIntFromCursor(cursor, cursor.getColumnIndex(columnName));
+    }
+
+    /**
+     * Retrieve an int from a cursor, or a default value.
+     *
+     * @param cursor The cursor from which to retrieve the value. Must be at a valid position.
+     * @param columnIndex The index of the column from which to retrieve the value.
+     * @param defaultValue The value to return if none was retrieved.
+     * @return The int value, or the default.
+     */
+    public static int safeGetIntFromCursor(Cursor cursor, int columnIndex, int defaultValue) {
+        try {
+            return cursor.getInt(columnIndex);
+        }
+        catch (Exception e) {
+            e.printStackTrace();
+            return defaultValue;
+        }
+    }
+
+    /**
+     * Retrieve an int from a cursor, or a default value.
+     *
+     * @param cursor The cursor from which to retrieve the value. Must be at a valid position.
+     * @param columnName The name of the column from which to retrieve the value.
+     * @param defaultValue The value to return if none was retrieved.
+     * @return The int value, or the default.
+     */
+    public static int safeGetIntFromCursor(Cursor cursor, String columnName, int defaultValue) {
+        return safeGetIntFromCursor(cursor, cursor.getColumnIndex(columnName), defaultValue);
+    }
+
+    /**
+     * Retrieve a String from a cursor, or null.
+     *
+     * @param cursor The cursor from which to retrieve the value. Must be at a valid position.
+     * @param columnIndex The index of the column from which to retrieve the value.
+     * @return The String value, or null.
+     */
+    public static String safeGetStringFromCursor(Cursor cursor, int columnIndex) {
+        try {
+            return cursor.getString(columnIndex);
+        }
+        catch (Exception e) {
+            e.printStackTrace();
+            return null;
+        }
+    }
+
+    /**
+     * Retrieve a String from a cursor, or null if a String could not be retrieved.
+     *
+     * @param cursor The cursor from which to retrieve the value. Must be at a valid position.
+     * @param columnName The name of the column from which to retrieve the value.
+     * @return The String value, or null.
+     */
+    public static String safeGetStringFromCursor(Cursor cursor, String columnName) {
+        return safeGetStringFromCursor(cursor, cursor.getColumnIndex(columnName));
+    }
+
+    /**
+     * Retrieve a String from a cursor, or a default value.
+     *
+     * @param cursor The cursor from which to retrieve the value. Must be at a valid position.
+     * @param columnIndex The index of the column from which to retrieve the value.
+     * @param defaultValue The value to return if none was retrieved.
+     * @return The String value, or null.
+     */
+    public static String safeGetStringFromCursor(Cursor cursor, int columnIndex, String defaultValue) {
+        try {
+            return cursor.getString(columnIndex);
+        }
+        catch (Exception e) {
+            e.printStackTrace();
+            return defaultValue;
+        }
+    }
+
+    /**
+     * Retrieve a String from a cursor, or a default value.
+     *
+     * @param cursor The cursor from which to retrieve the value. Must be at a valid position.
+     * @param columnName The name of the column from which to retrieve the value.
+     * @param defaultValue The value to return if none was retrieved.
+     * @return The String value, or the default.
+     */
+    public static String safeGetStringFromCursor(Cursor cursor, String columnName, String defaultValue) {
+        return safeGetStringFromCursor(cursor, cursor.getColumnIndex(columnName), defaultValue);
+    }
+
+
+    /**
+     * Retrieve a byte array from a cursor, or null if a byte array could not be retrieved.
+     *
+     * @param cursor The cursor from which to retrieve the value. Must be at a valid position.
+     * @param columnIndex The index of the column from which to retrieve the value.
+     * @return The String value, or null.
+     */
+    public static byte[] safeGetByteArrayFromCursor(Cursor cursor, int columnIndex) {
+        try {
+            return cursor.getBlob(columnIndex);
+        }
+        catch (SQLiteException e) {
+            e.printStackTrace();
+            return null;
+        }
+        finally {
+            if (cursor != null) {
+                cursor.close();
             }
         }
-        return sql;
     }
 
     /**
-     * Return only the first row from a query.
+     * Return a human-readable representation of a byte length.
      *
-     * @param context The {@link Context} used to open the database.
-     * @param table The table to query.
-     * @param columns The columns to fetch, or {@code null} to fetch all columns.
-     * @param selection The selection criteria.
-     * @param selectionArgs Selection arguments.
-     * @return A {@link StaticResultSet.Row} containing the results.
+     * @param bytes The number of bytes.
+     * @param decimal {@code true} if decimal (SI) should be used, or {@code false} for binary.
+     * @return The human-readable string representation.
      */
-    public static StaticResultSet.Row queryFirstRow(Context context, String table, String[] columns, String selection, String[] selectionArgs) {
-        StaticResultSet resultSet = query(context, table, columns, selection, selectionArgs, null, null, null, "1");
-        return resultSet.isEmpty() ? null : resultSet.getRowAt(0);
-    }
-
-    /**
-     * Database-to-Java conversion types.
-     */
-    private static enum DataType {
-        /**
-         * Convert to {@link String}.
-         */
-        STRING,
-        /**
-         * Convert to {@link Integer}.
-         */
-        INTEGER,
-        /**
-         * Convert to {@link Long}.
-         */
-        LONG,
-        /**
-         * Convert to byte array.
-         */
-        BLOB
+    public static String humanReadableByteCount(long bytes, boolean decimal) {
+        int unit = decimal ? 1000 : 1024;
+        if (bytes < unit) {
+            return bytes + " B";
+        }
+        int exp = (int) (Math.log(bytes) / Math.log(unit));
+        String pre = (decimal ? "kMGTPE" : "KMGTPE").charAt(exp - 1) + (decimal ? "" : "i");
+        return String.format(Locale.US, "%.1f %sB", bytes / Math.pow(unit, exp), pre);
     }
 }
