@@ -672,7 +672,7 @@ public class SQLiteUtils {
         Cursor cursor = db.query("sqlite_master", null, query, null, null, null, null);
         ArrayList<String> tableList = new ArrayList<String>();
         while (cursor.moveToNext()) {
-            tableList.add(cursor.getString(cursor.getColumnIndex("name")));
+            tableList.add(SQLiteUtils.safeGetStringFromCursor(cursor, "name"));
         }
         cursor.close();
         return tableList;
